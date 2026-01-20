@@ -6,6 +6,68 @@ from state import STATE
 import permissions
 
 
+# ---------- VIEW POUR LES MATCHS ----------
+class MatchView(discord.ui.View):
+    def __init__(self, match, orga_id):
+        super().__init__(timeout=None)
+        self.match = match
+        self.orga_id = orga_id
+        self.ready = set()
+
+    @discord.ui.button(label="PRÊT", style=discord.ButtonStyle.success, emoji="👍")
+    async def ready_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+
+        if user_id not in self.match["players"]:
+            return await interaction.response.send_message(
+                "Tu n’es pas concerné par ce match.", ephemeral=True
+            )
+
+        self.ready.add(user_id)
+        await interaction.response.send_message("Noté 👍", ephemeral=True)
+
+        # Si les 4 joueurs sont prêts
+        if len(self.ready) == 4:
+            channel = interaction.channel
+            await channel.send(
+                f"<@{self.orga_id}> — les 4 joueurs sont prêts. "
+                f"Merci de **valider** le match."
+            )
+            self.enable_validate()
+
+    @discord.ui.button(label="INDISPONIBLE", style=discord.ButtonStyle.danger, emoji="❌")
+    async def unavailable_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+
+        if user_id not in self.match["players"]:
+            return await interaction.response.send_message(
+                "Tu n’es pas concerné par ce match.", ephemeral=True
+            )
+
+        await interaction.response.send_message(
+            f"{interaction.user.mention} n’est pas disponible à cet horaire.\n"
+            "👉 Merci d’indiquer vos disponibilités ici.",
+            allowed_mentions=discord.AllowedMentions(users=True)
+        )
+
+    @discord.ui.button(label="VALIDER", style=discord.ButtonStyle.primary, emoji="✅", disabled=True)
+    async def validate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.orga_id:
+            return await interaction.response.send_message(
+                "Seul l’organisateur peut valider.", ephemeral=True
+            )
+
+        await interaction.response.send_message(
+            "Match validé. (prochaine étape : tirage de la map)", ephemeral=True
+        )
+
+    def enable_validate(self):
+        for child in self.children:
+            if isinstance(child, discord.ui.Button) and child.label == "VALIDER":
+                child.disabled = False
+
+
+# ---------- COMMANDES ----------
 def setup(tree, bot):
 
     @tree.command(name="tirage")
@@ -49,20 +111,19 @@ def setup(tree, bot):
         category = guild.get_channel(config.MATCH_CATEGORY_ID)
 
         STATE.matches = []
-
         random.shuffle(STATE.teams)
 
         for i in range(0, len(STATE.teams), 2):
             t1 = STATE.teams[i]
             t2 = STATE.teams[i + 1]
 
-            # ---- PERMISSIONS ----
+            # -------- PERMISSIONS --------
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False)
             }
 
-            # joueurs des deux équipes
             mentions = []
+            players_ids = []
 
             for team in (t1, t2):
                 for p in team["players"]:
@@ -74,50 +135,71 @@ def setup(tree, bot):
                             read_message_history=True,
                         )
                         mentions.append(member.mention)
+                        players_ids.append(member.id)
 
-            # organisateur
             orga = guild.get_member(config.ORGA_USER_ID)
             if orga:
-                overwrites[orga] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                )
+                overwrites[orga] = discord.PermissionOverwrite(view_channel=True)
 
-            # rôle admin
             admin_role = guild.get_role(config.ADMIN_ROLE_ID)
             if admin_role:
-                overwrites[admin_role] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                )
+                overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True)
 
-            # ---- CRÉATION DU SALON ----
             channel = await guild.create_text_channel(
                 name=f"equipe-{t1['id']}-vs-equipe-{t2['id']}",
                 category=category,
                 overwrites=overwrites
             )
 
-            # ---- MESSAGE D’OUVERTURE AVEC MENTIONS ----
-            await channel.send(
-                f"{' '.join(mentions)}\n\n"
-                f"⚔️ **MATCH À JOUER**\n"
-                f"EQUIPE {t1['id']} vs EQUIPE {t2['id']}\n\n"
-                f"📅 {date}\n"
-                f"🕒 {heure}"
+            # -------- EMBED MATCH --------
+            embed = discord.Embed(
+                title="⚔️ Match à jouer",
+                color=discord.Color.gold()
             )
 
-            STATE.matches.append({
+            embed.add_field(
+                name=f"EQUIPE {t1['id']}",
+                value=(
+                    f"<@{t1['players'][0]['user_id']}> ({t1['players'][0]['class']})\n"
+                    f"<@{t1['players'][1]['user_id']}> ({t1['players'][1]['class']})"
+                ),
+                inline=True
+            )
+
+            embed.add_field(
+                name=f"EQUIPE {t2['id']}",
+                value=(
+                    f"<@{t2['players'][0]['user_id']}> ({t2['players'][0]['class']})\n"
+                    f"<@{t2['players'][1]['user_id']}> ({t2['players'][1]['class']})"
+                ),
+                inline=True
+            )
+
+            embed.add_field(
+                name="🗓️ Horaire",
+                value=f"{date} à {heure}",
+                inline=False
+            )
+
+            match = {
                 "team1": t1["id"],
                 "team2": t2["id"],
                 "date": date,
                 "time": heure,
-                "channel_id": channel.id
-            })
+                "channel_id": channel.id,
+                "players": players_ids
+            }
 
-        # ---- EMBED MATCHS À VENIR ----
+            view = MatchView(match, config.ORGA_USER_ID)
+
+            await channel.send(
+                content=" ".join(mentions),
+                embed=embed,
+                view=view
+            )
+
+            STATE.matches.append(match)
+
         embeds_channel = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
         msg = await embeds_channel.send(
             embed=embeds.upcoming_embed(STATE.matches)
