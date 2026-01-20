@@ -5,43 +5,25 @@ from discord.ext import commands
 
 from app import app
 import players
-import tirage
 import tournoi
 
-# --------------------
-# Flask runner
-# --------------------
+# ---- FLASK THREAD ----
 def run_flask():
-    port = int(os.getenv("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=10000)
 
+threading.Thread(target=run_flask, daemon=True).start()
 
-# --------------------
-# Discord bot
-# --------------------
+# ---- DISCORD BOT ----
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
     await bot.tree.sync()
-    print(f"Bot connecté : {bot.user}")
+    print("Bot Discord prêt.")
 
 players.setup(bot.tree, bot)
-tirage.setup(bot.tree, bot)
 tournoi.setup(bot.tree, bot)
 
-# --------------------
-# Start both
-# --------------------
-if __name__ == "__main__":
-    # Flask en background
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-
-    # Discord bot
-    token = os.getenv("DISCORD_TOKEN")
-    if not token:
-        raise RuntimeError("DISCORD_TOKEN manquant")
-
-    bot.run(token)
+token = os.getenv("DISCORD_TOKEN")
+bot.run(token)
