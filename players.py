@@ -1,5 +1,4 @@
 import discord
-from discord import app_commands
 
 import embeds
 import storage
@@ -14,15 +13,17 @@ def setup(tree, bot):
         interaction: discord.Interaction,
         joueur: discord.Member
     ):
+        await interaction.response.defer(ephemeral=True)
+
         if not permissions.is_orga_or_admin(interaction):
-            return await interaction.response.send_message("Accès refusé.", ephemeral=True)
+            return await interaction.followup.send("Accès refusé.")
 
         data = storage.load_data()
         if data["phase"] != "players":
-            return await interaction.response.send_message("Inscriptions fermées.", ephemeral=True)
+            return await interaction.followup.send("Inscriptions fermées.")
 
         if any(p["user_id"] == joueur.id for p in data["players"]):
-            return await interaction.response.send_message("Déjà inscrit.", ephemeral=True)
+            return await interaction.followup.send("Ce joueur est déjà inscrit.")
 
         data["players"].append({"user_id": joueur.id, "class": None})
         storage.save_data(data)
@@ -37,7 +38,7 @@ def setup(tree, bot):
             await msg.edit(embed=embeds.players_embed(data))
 
         storage.save_data(data)
-        await interaction.response.send_message("Joueur inscrit.", ephemeral=True)
+        await interaction.followup.send(f"{joueur.mention} inscrit.")
 
     @tree.command(name="classe", description="Attribuer une classe à un joueur")
     async def classe(
@@ -45,16 +46,18 @@ def setup(tree, bot):
         joueur: discord.Member,
         classe: str
     ):
+        await interaction.response.defer(ephemeral=True)
+
         if not permissions.is_orga_or_admin(interaction):
-            return await interaction.response.send_message("Accès refusé.", ephemeral=True)
+            return await interaction.followup.send("Accès refusé.")
 
         classe = classe.lower().strip()
         if classe not in config.CLASSES:
-            return await interaction.response.send_message("Classe invalide.", ephemeral=True)
+            return await interaction.followup.send("Classe invalide.")
 
         data = storage.load_data()
         if data["phase"] != "players":
-            return await interaction.response.send_message("Action impossible.", ephemeral=True)
+            return await interaction.followup.send("Action impossible.")
 
         for p in data["players"]:
             if p["user_id"] == joueur.id:
@@ -65,6 +68,6 @@ def setup(tree, bot):
                 msg = await channel.fetch_message(data["embeds"]["players"])
                 await msg.edit(embed=embeds.players_embed(data))
 
-                return await interaction.response.send_message("Classe attribuée.", ephemeral=True)
+                return await interaction.followup.send("Classe attribuée.")
 
-        await interaction.response.send_message("Joueur non inscrit.", ephemeral=True)
+        await interaction.followup.send("Joueur non inscrit.")
