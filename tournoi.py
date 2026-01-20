@@ -1,7 +1,7 @@
 import asyncio
 import random
 from datetime import datetime, timedelta
-from dateutil import tz
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
@@ -11,7 +11,7 @@ import permissions
 import embeds
 from state import STATE, Player, Team, Match
 
-PARIS_TZ = tz.gettz("Europe/Paris")
+PARIS_TZ = ZoneInfo("Europe/Paris")
 
 
 def _find_team(team_id: int) -> Team | None:
