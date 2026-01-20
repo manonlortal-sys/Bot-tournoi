@@ -1,9 +1,30 @@
 import os
+import threading
+
 import discord
 from discord.ext import commands
+from flask import Flask
 
 import tournoi
 
+# -------------------------
+# Flask (keep-alive Render)
+# -------------------------
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot tournoi actif", 200
+
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+
+# -------------------------
+# Discord bot
+# -------------------------
 intents = discord.Intents.default()
 intents.message_content = True  # requis pour détecter les screens (attachments)
 
@@ -121,8 +142,21 @@ async def on_message(message: discord.Message):
 # Enregistrement des commandes tournoi
 tournoi.setup(bot.tree, bot)
 
-token = os.getenv("DISCORD_TOKEN")
-if not token:
-    raise RuntimeError("DISCORD_TOKEN manquant")
 
-bot.run(token)
+# -------------------------
+# Lancement
+# -------------------------
+def main():
+    # Flask en thread séparé
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        raise RuntimeError("DISCORD_TOKEN manquant")
+
+    bot.run(token)
+
+
+if __name__ == "__main__":
+    main()
