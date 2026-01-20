@@ -472,8 +472,6 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):  # type: ignore
         await _refresh_all_embeds(bot)
         await interaction.followup.send("Match modifié.")
 
-    # background reminder task
-    bot.loop.create_task(_reminder_loop(bot))
 
 
 async def _reminder_loop(bot: discord.Client):
