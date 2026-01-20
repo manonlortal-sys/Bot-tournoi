@@ -11,9 +11,11 @@ import config
 def setup(tree, bot):
 
     @tree.command(name="tournoi", description="Lancer le tournoi et tirer les matchs")
-    @app_commands.describe(date="Date (JJ/MM)", heure="Heure (HH:MM)")
-    async def tournoi(interaction, date: str, heure: str):
-
+    async def tournoi(
+        interaction: discord.Interaction,
+        date: str,
+        heure: str
+    ):
         if not permissions.is_orga_or_admin(interaction):
             return await interaction.response.send_message("Accès refusé.", ephemeral=True)
 
@@ -92,7 +94,6 @@ def setup(tree, bot):
         storage.save_data(data)
 
         channel = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
-
         msg = await channel.fetch_message(data["embeds"]["upcoming"])
         await msg.edit(embed=embeds.upcoming_embed(data))
 
