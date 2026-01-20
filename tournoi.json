@@ -1,5 +1,5 @@
 {
-  "phase": "players",
+  "phase": "teams",
   "embeds": {
     "players": null,
     "teams": null,
@@ -7,5 +7,6 @@
     "history": null
   },
   "players": [],
-  "teams": []
+  "teams": [],
+  "matches": []
 }
