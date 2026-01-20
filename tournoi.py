@@ -1,6 +1,5 @@
 import random
 import discord
-from discord import app_commands
 
 import storage
 import permissions
@@ -16,19 +15,21 @@ def setup(tree, bot):
         date: str,
         heure: str
     ):
+        await interaction.response.defer(ephemeral=True)
+
         if not permissions.is_orga_or_admin(interaction):
-            return await interaction.response.send_message("Accès refusé.", ephemeral=True)
+            return await interaction.followup.send("Accès refusé.")
 
         data = storage.load_data()
         if data["phase"] != "teams":
-            return await interaction.response.send_message(
-                "Les équipes doivent être créées avant.", ephemeral=True
+            return await interaction.followup.send(
+                "Les équipes doivent être créées avant."
             )
 
         teams = data["teams"]
         if len(teams) % 2 != 0:
-            return await interaction.response.send_message(
-                "Nombre d'équipes invalide.", ephemeral=True
+            return await interaction.followup.send(
+                "Nombre d'équipes invalide."
             )
 
         random.shuffle(teams)
@@ -97,6 +98,4 @@ def setup(tree, bot):
         msg = await channel.fetch_message(data["embeds"]["upcoming"])
         await msg.edit(embed=embeds.upcoming_embed(data))
 
-        await interaction.response.send_message(
-            "Matchs créés et salons ouverts.", ephemeral=True
-        )
+        await interaction.followup.send("Matchs créés et salons ouverts.")
