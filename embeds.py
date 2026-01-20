@@ -4,10 +4,7 @@ import discord
 def players_embed(data):
     embed = discord.Embed(
         title="👥 Tournoi 2v2 — Joueurs inscrits",
-        description=(
-            "Liste des joueurs inscrits au tournoi.\n"
-            "Chaque joueur doit avoir une classe avant le tirage des équipes."
-        ),
+        description="Chaque joueur doit avoir une classe avant le tirage.",
         color=discord.Color.blue(),
     )
 
@@ -26,14 +23,10 @@ def players_embed(data):
 
 def teams_embed(data):
     embed = discord.Embed(
-        title="🏆 Tournoi 2v2 — Équipes inscrites",
-        description="Liste des équipes engagées dans le tournoi.\n❌ = équipe éliminée",
+        title="🏆 Tournoi 2v2 — Équipes",
+        description="Classement en cours",
         color=discord.Color.gold(),
     )
-
-    if not data["teams"]:
-        embed.add_field(name="Aucune équipe", value="—", inline=False)
-        return embed
 
     alive, eliminated = [], []
 
@@ -48,19 +41,36 @@ def teams_embed(data):
             f"❌ {line}" if t.get("eliminated") else line
         )
 
-    embed.add_field(name="Équipes", value="\n".join(alive + eliminated), inline=False)
+    embed.add_field(
+        name="Équipes",
+        value="\n".join(alive + eliminated) if alive or eliminated else "—",
+        inline=False,
+    )
     return embed
 
 
-def upcoming_embed():
-    return discord.Embed(
+def upcoming_embed(data):
+    embed = discord.Embed(
         title="📅 Tournoi 2v2 — Matchs à venir",
         color=discord.Color.gold(),
     )
 
+    if not data["matches"]:
+        embed.add_field(name="Aucun match", value="—", inline=False)
+        return embed
+
+    lines = []
+    for m in data["matches"]:
+        lines.append(
+            f"EQUIPE {m['team1']} vs EQUIPE {m['team2']} — {m['date']} {m['time']}"
+        )
+
+    embed.add_field(name="Matchs", value="\n".join(lines), inline=False)
+    return embed
+
 
 def history_embed():
     return discord.Embed(
-        title="📜 Tournoi 2v2 — Historique des matchs",
+        title="📜 Tournoi 2v2 — Historique",
         color=discord.Color.gold(),
     )
