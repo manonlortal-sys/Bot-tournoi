@@ -6,40 +6,14 @@ from state import STATE
 import permissions
 
 
-# ---------- VIEW POUR LES MATCHS ----------
 class MatchView(discord.ui.View):
-    def __init__(self, match, orga_id):
+    def __init__(self, match):
         super().__init__(timeout=None)
         self.match = match
-        self.orga_id = orga_id
-        self.ready = set()
-
-    @discord.ui.button(label="PRÊT", style=discord.ButtonStyle.success, emoji="👍")
-    async def ready_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
-
-        if user_id not in self.match["players"]:
-            return await interaction.response.send_message(
-                "Tu n’es pas concerné par ce match.", ephemeral=True
-            )
-
-        self.ready.add(user_id)
-        await interaction.response.send_message("Noté 👍", ephemeral=True)
-
-        # Si les 4 joueurs sont prêts
-        if len(self.ready) == 4:
-            channel = interaction.channel
-            await channel.send(
-                f"<@{self.orga_id}> — les 4 joueurs sont prêts. "
-                f"Merci de **valider** le match."
-            )
-            self.enable_validate()
 
     @discord.ui.button(label="INDISPONIBLE", style=discord.ButtonStyle.danger, emoji="❌")
-    async def unavailable_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
-
-        if user_id not in self.match["players"]:
+    async def unavailable(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in self.match["players"]:
             return await interaction.response.send_message(
                 "Tu n’es pas concerné par ce match.", ephemeral=True
             )
@@ -50,24 +24,16 @@ class MatchView(discord.ui.View):
             allowed_mentions=discord.AllowedMentions(users=True)
         )
 
-    @discord.ui.button(label="VALIDER", style=discord.ButtonStyle.primary, emoji="✅", disabled=True)
-    async def validate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.orga_id:
+    @discord.ui.button(label="VALIDER", style=discord.ButtonStyle.success, emoji="✅", disabled=True)
+    async def validate(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != config.ORGA_USER_ID:
             return await interaction.response.send_message(
-                "Seul l’organisateur peut valider.", ephemeral=True
+                "Seul l’organisateur peut valider le match.", ephemeral=True
             )
 
-        await interaction.response.send_message(
-            "Match validé. (prochaine étape : tirage de la map)", ephemeral=True
-        )
-
-    def enable_validate(self):
-        for child in self.children:
-            if isinstance(child, discord.ui.Button) and child.label == "VALIDER":
-                child.disabled = False
+        await interaction.response.send_message("Match validé.", ephemeral=True)
 
 
-# ---------- COMMANDES ----------
 def setup(tree, bot):
 
     @tree.command(name="tirage")
@@ -90,18 +56,13 @@ def setup(tree, bot):
             })
 
         channel = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
-        msg = await channel.send(embed=embeds.teams_embed(STATE.teams))
-        STATE.embeds["teams"] = msg.id
+        await channel.send(embed=embeds.teams_embed(STATE.teams))
 
         await interaction.followup.send("Équipes créées.")
 
 
     @tree.command(name="tournoi")
-    async def tournoi(
-        interaction: discord.Interaction,
-        date: str,
-        heure: str
-    ):
+    async def tournoi(interaction: discord.Interaction, date: str, heure: str):
         await interaction.response.defer(ephemeral=True)
 
         if len(STATE.teams) % 2 != 0 or not STATE.teams:
@@ -117,7 +78,6 @@ def setup(tree, bot):
             t1 = STATE.teams[i]
             t2 = STATE.teams[i + 1]
 
-            # -------- PERMISSIONS --------
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False)
             }
@@ -125,6 +85,7 @@ def setup(tree, bot):
             mentions = []
             players_ids = []
 
+            # 🔹 JOUEURS DES DEUX ÉQUIPES
             for team in (t1, t2):
                 for p in team["players"]:
                     member = guild.get_member(p["user_id"])
@@ -137,10 +98,12 @@ def setup(tree, bot):
                         mentions.append(member.mention)
                         players_ids.append(member.id)
 
+            # orga
             orga = guild.get_member(config.ORGA_USER_ID)
             if orga:
                 overwrites[orga] = discord.PermissionOverwrite(view_channel=True)
 
+            # admins
             admin_role = guild.get_role(config.ADMIN_ROLE_ID)
             if admin_role:
                 overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True)
@@ -151,7 +114,6 @@ def setup(tree, bot):
                 overwrites=overwrites
             )
 
-            # -------- EMBED MATCH --------
             embed = discord.Embed(
                 title="⚔️ Match à jouer",
                 color=discord.Color.gold()
@@ -184,26 +146,26 @@ def setup(tree, bot):
             match = {
                 "team1": t1["id"],
                 "team2": t2["id"],
-                "date": date,
-                "time": heure,
-                "channel_id": channel.id,
-                "players": players_ids
+                "players": players_ids,
+                "channel_id": channel.id
             }
 
-            view = MatchView(match, config.ORGA_USER_ID)
-
-            await channel.send(
+            # 🔴 MESSAGE D’OUVERTURE : MENTION DES 4 JOUEURS
+            msg = await channel.send(
                 content=" ".join(mentions),
-                embed=embed,
-                view=view
+                embed=embed
             )
+
+            # 👍 réaction
+            await msg.add_reaction("👍")
+
+            # boutons
+            view = MatchView(match)
+            await msg.edit(view=view)
 
             STATE.matches.append(match)
 
         embeds_channel = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
-        msg = await embeds_channel.send(
-            embed=embeds.upcoming_embed(STATE.matches)
-        )
-        STATE.embeds["upcoming"] = msg.id
+        await embeds_channel.send(embed=embeds.upcoming_embed(STATE.matches))
 
         await interaction.followup.send("Matchs créés.")
