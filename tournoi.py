@@ -21,13 +21,14 @@ def setup(tree, bot):
             return await interaction.followup.send("Accès refusé.")
 
         data = storage.load_data()
+
         if data["phase"] != "teams":
             return await interaction.followup.send(
                 "Les équipes doivent être créées avant."
             )
 
         teams = data["teams"]
-        if len(teams) % 2 != 0:
+        if not teams or len(teams) % 2 != 0:
             return await interaction.followup.send(
                 "Nombre d'équipes invalide."
             )
@@ -94,8 +95,26 @@ def setup(tree, bot):
         data["phase"] = "matches"
         storage.save_data(data)
 
-        channel = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
-        msg = await channel.fetch_message(data["embeds"]["upcoming"])
-        await msg.edit(embed=embeds.upcoming_embed(data))
+        # ---- EMBED UPCOMING : CREATE OR UPDATE ----
+        embeds_channel = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
+
+        upcoming_id = data["embeds"].get("upcoming")
+
+        if upcoming_id is None:
+            msg = await embeds_channel.send(
+                embed=embeds.upcoming_embed(data)
+            )
+            data["embeds"]["upcoming"] = msg.id
+            storage.save_data(data)
+        else:
+            try:
+                msg = await embeds_channel.fetch_message(upcoming_id)
+                await msg.edit(embed=embeds.upcoming_embed(data))
+            except discord.NotFound:
+                msg = await embeds_channel.send(
+                    embed=embeds.upcoming_embed(data)
+                )
+                data["embeds"]["upcoming"] = msg.id
+                storage.save_data(data)
 
         await interaction.followup.send("Matchs créés et salons ouverts.")
