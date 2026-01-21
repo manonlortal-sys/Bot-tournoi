@@ -39,8 +39,8 @@ def _channel_mentions_for_match(team1: Team, team2: Team) -> str:
 
 
 def _match_datetime(date_str: str, time_str: str) -> datetime | None:
-    ts = time_str.lower().replace("h", ":")
     try:
+        ts = time_str.lower().replace("h", ":")
         hh, mm = ts.split(":")
         parts = date_str.split("/")
         if len(parts) == 2:
@@ -61,14 +61,15 @@ class MatchView(discord.ui.View):
     def _get_match(self) -> Match | None:
         return next((m for m in STATE.matches if m.id == self.match_id), None)
 
-    def _is_player_allowed(self, interaction, m: Match) -> bool:
+    def _is_player(self, user_id: int, m: Match) -> bool:
         t1 = _find_team(m.team1_id)
         t2 = _find_team(m.team2_id)
-        allowed = {
+        if not t1 or not t2:
+            return False
+        return user_id in {
             t1.players[0].user_id, t1.players[1].user_id,
             t2.players[0].user_id, t2.players[1].user_id,
         }
-        return interaction.user.id in allowed
 
     @discord.ui.button(label="INDISPONIBLE", emoji=config.EMOJI_CROSS, style=discord.ButtonStyle.danger)
     async def indispo(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -76,7 +77,7 @@ class MatchView(discord.ui.View):
         if not m or m.status != "WAITING_AVAIL":
             return await interaction.response.send_message("Action impossible.", ephemeral=True)
 
-        if not self._is_player_allowed(interaction, m):
+        if not self._is_player(interaction.user.id, m):
             return await interaction.response.send_message("Accès refusé.", ephemeral=True)
 
         orga_mentions = " ".join(f"<@{oid}>" for oid in ORGA_IDS)
@@ -84,7 +85,7 @@ class MatchView(discord.ui.View):
         await interaction.response.send_message(
             f"{config.EMOJI_CROSS} **INDISPONIBLE**\n\n"
             f"{interaction.user.mention} n’est pas disponible à l’horaire prévu.\n\n"
-            "👉 Merci d’indiquer vos disponibilités alternatives dans ce canal.\n\n"
+            "👉 Merci d’indiquer tes disponibilités alternatives dans ce canal.\n\n"
             f"🔔 Organisateurs : {orga_mentions}",
             ephemeral=False
         )
@@ -179,7 +180,10 @@ async def _refresh_match_message(bot: discord.Client, m: Match):
         return
     ch = await bot.fetch_channel(m.channel_id)
     msg = await ch.fetch_message(m.created_message_id)
-    await msg.edit(embed=embeds.embed_match(m, _find_team(m.team1_id), _find_team(m.team2_id)), view=MatchView(m.id))
+    await msg.edit(
+        embed=embeds.embed_match(m, _find_team(m.team1_id), _find_team(m.team2_id)),
+        view=MatchView(m.id),
+    )
 
 
 async def _ensure_main_embeds(bot: discord.Client):
@@ -221,3 +225,138 @@ async def _reminder_loop(bot: discord.Client):
         except:
             pass
         await asyncio.sleep(60)
+
+
+def setup(tree: app_commands.CommandTree, bot: commands.Bot):
+    @tree.command(name="inscription", description="Inscrire un joueur au tournoi")
+    async def inscription(interaction: discord.Interaction, joueur: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        if not permissions.is_orga_or_admin(interaction):
+            return await interaction.followup.send("Accès refusé.")
+        if any(p.user_id == joueur.id for p in STATE.players):
+            return await interaction.followup.send("Déjà inscrit.")
+        STATE.players.append(Player(user_id=joueur.id, cls=None))
+        ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
+        if STATE.embeds.players_msg_id is None:
+            STATE.embeds.players_msg_id = (await ch.send(embed=embeds.embed_players(STATE.players))).id
+        else:
+            try:
+                msg = await ch.fetch_message(STATE.embeds.players_msg_id)
+                await msg.edit(embed=embeds.embed_players(STATE.players))
+            except:
+                STATE.embeds.players_msg_id = (await ch.send(embed=embeds.embed_players(STATE.players))).id
+        await interaction.followup.send("Joueur inscrit.")
+
+    @tree.command(name="classe", description="Attribuer une classe à un joueur")
+    async def classe(interaction: discord.Interaction, joueur: discord.Member, classe: str):
+        await interaction.response.defer(ephemeral=True)
+        if not permissions.is_orga_or_admin(interaction):
+            return await interaction.followup.send("Accès refusé.")
+        classe = classe.lower().strip()
+        if classe not in config.CLASSES:
+            return await interaction.followup.send("Classe invalide.")
+        for p in STATE.players:
+            if p.user_id == joueur.id:
+                p.cls = classe
+                break
+        await interaction.followup.send("Classe attribuée.")
+
+    @tree.command(name="tirage", description="Tirage au sort des équipes (duos)")
+    async def tirage(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not permissions.is_orga_or_admin(interaction):
+            return await interaction.followup.send("Accès refusé.")
+        if not STATE.players or len(STATE.players) % 2 != 0:
+            return await interaction.followup.send("Nombre de joueurs invalide.")
+        if any(p.cls is None for p in STATE.players):
+            return await interaction.followup.send("Tous les joueurs doivent avoir une classe.")
+        random.shuffle(STATE.players)
+        STATE.teams.clear()
+        for i in range(0, len(STATE.players), 2):
+            STATE.teams.append(Team(id=len(STATE.teams) + 1, players=(STATE.players[i], STATE.players[i + 1])))
+        if STATE.embeds.players_msg_id:
+            try:
+                ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
+                await (await ch.fetch_message(STATE.embeds.players_msg_id)).delete()
+            except:
+                pass
+            STATE.embeds.players_msg_id = None
+        await _ensure_main_embeds(bot)
+        await _refresh_all_embeds(bot)
+        await interaction.followup.send("Tirage effectué.")
+
+    @tree.command(name="tournoi", description="Créer les matchs du round")
+    async def tournoi_cmd(interaction: discord.Interaction, date: str, heure: str):
+        await interaction.response.defer(ephemeral=True)
+        if not permissions.is_orga_or_admin(interaction):
+            return await interaction.followup.send("Accès refusé.")
+        alive = _alive_teams()
+        if not alive or len(alive) % 2 != 0:
+            return await interaction.followup.send("Nombre d'équipes invalide.")
+        prev_pending = [m for m in STATE.matches if m.round_no == STATE.current_round and m.status != "DONE"]
+        if prev_pending:
+            return await interaction.followup.send("Le round précédent n’est pas terminé.")
+        STATE.current_round += 1
+        guild = interaction.guild
+        category = guild.get_channel(config.MATCH_CATEGORY_ID)
+        random.shuffle(alive)
+        for i in range(0, len(alive), 2):
+            t1, t2 = alive[i], alive[i + 1]
+            overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False)}
+            admin_role = guild.get_role(config.ADMIN_ROLE_ID)
+            if admin_role:
+                overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+            for oid in ORGA_IDS:
+                mem = guild.get_member(oid)
+                if mem:
+                    overwrites[mem] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+            for pl in (*t1.players, *t2.players):
+                mem = guild.get_member(pl.user_id)
+                if mem:
+                    overwrites[mem] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+            ch = await guild.create_text_channel(
+                name=config.MATCH_CHANNEL_TEMPLATE.format(a=t1.id, b=t2.id),
+                category=category,
+                overwrites=overwrites,
+            )
+            m = Match(
+                id=len(STATE.matches) + 1,
+                round_no=STATE.current_round,
+                team1_id=t1.id,
+                team2_id=t2.id,
+                date_str=date,
+                time_str=heure,
+                channel_id=ch.id,
+            )
+            STATE.matches.append(m)
+            await ch.send(_channel_mentions_for_match(t1, t2))
+            msg = await ch.send(embed=embeds.embed_match(m, t1, t2), view=MatchView(m.id))
+            m.created_message_id = msg.id
+            await msg.add_reaction(config.EMOJI_THUMBS)
+        await _refresh_all_embeds(bot)
+        await interaction.followup.send("Round créé.")
+
+    @tree.command(name="modifier", description="Modifier date/heure du match")
+    async def modifier(interaction: discord.Interaction, date: str, heure: str):
+        await interaction.response.defer(ephemeral=True)
+        if not permissions.is_orga_or_admin(interaction):
+            return await interaction.followup.send("Accès refusé.")
+        m = next((x for x in STATE.matches if x.channel_id == interaction.channel_id and x.status == "WAITING_AVAIL"), None)
+        if not m:
+            return await interaction.followup.send("Aucun match modifiable.")
+        m.date_str = date
+        m.time_str = heure
+        m.thumbs.clear()
+        ch = interaction.channel
+        try:
+            old = await ch.fetch_message(m.created_message_id)
+            await old.delete()
+        except:
+            pass
+        t1 = _find_team(m.team1_id)
+        t2 = _find_team(m.team2_id)
+        msg = await ch.send(embed=embeds.embed_match(m, t1, t2), view=MatchView(m.id))
+        m.created_message_id = msg.id
+        await msg.add_reaction(config.EMOJI_THUMBS)
+        await _refresh_all_embeds(bot)
+        await interaction.followup.send("Horaire modifié.")
