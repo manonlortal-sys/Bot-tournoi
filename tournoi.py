@@ -1,3 +1,5 @@
+# tournoi.py — VERSION DE RÉFÉRENCE COMPLÈTE
+
 import asyncio
 import random
 from datetime import datetime, timedelta
@@ -10,7 +12,7 @@ from discord.ext import commands
 import config
 import permissions
 import embeds
-from state import STATE, Player, Team, Match, EmbedsState
+from state import STATE, Player, Team, Match
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
@@ -19,16 +21,14 @@ ORGA_IDS = {
     1352575142668013588,
 }
 
-# =================================================
+# -------------------------------------------------
 # Utils
-# =================================================
+# -------------------------------------------------
 def _find_team(team_id: int) -> Team | None:
     return next((t for t in STATE.teams if t.id == team_id), None)
 
-
 def _alive_teams() -> list[Team]:
     return [t for t in STATE.teams if not t.eliminated]
-
 
 def _channel_mentions_for_match(team1: Team, team2: Team) -> str:
     ids = [
@@ -38,7 +38,6 @@ def _channel_mentions_for_match(team1: Team, team2: Team) -> str:
         team2.players[1].user_id,
     ]
     return " ".join(f"<@{i}>" for i in ids)
-
 
 def _match_datetime(date_str: str, time_str: str) -> datetime | None:
     try:
@@ -54,14 +53,12 @@ def _match_datetime(date_str: str, time_str: str) -> datetime | None:
     except:
         return None
 
-
 def _valid_team(p1: Player, p2: Player) -> bool:
-    return p1.cls is not None and p2.cls is not None and p1.cls != p2.cls
+    return p1.cls and p2.cls and p1.cls != p2.cls
 
-
-# =================================================
+# -------------------------------------------------
 # Views
-# =================================================
+# -------------------------------------------------
 class MatchView(discord.ui.View):
     def __init__(self, match_id: int):
         super().__init__(timeout=None)
@@ -82,7 +79,6 @@ class MatchView(discord.ui.View):
             t2.players[1].user_id,
         }
 
-    # ---------- INDISPONIBLE ----------
     @discord.ui.button(label="INDISPONIBLE", emoji=config.EMOJI_CROSS, style=discord.ButtonStyle.danger)
     async def indispo(self, interaction: discord.Interaction, button: discord.ui.Button):
         m = self._get_match()
@@ -96,8 +92,8 @@ class MatchView(discord.ui.View):
 
         await interaction.response.send_message(
             f"{config.EMOJI_CROSS} **INDISPONIBLE**\n\n"
-            f"{interaction.user.mention} n’est pas disponible à l’horaire prévu.\n\n"
-            "👉 Merci d’indiquer tes disponibilités alternatives dans ce canal.\n\n"
+            f"{interaction.user.mention} n’est pas disponible.\n\n"
+            "👉 Merci d’indiquer tes dispos alternatives.\n\n"
             f"🔔 Organisateurs : {orga_mentions}",
             ephemeral=False
         )
@@ -106,7 +102,6 @@ class MatchView(discord.ui.View):
         m.thumbs.clear()
         await _refresh_all_embeds(interaction.client)
 
-    # ---------- VALIDER ----------
     @discord.ui.button(label="VALIDER", emoji=config.EMOJI_VALIDATE, style=discord.ButtonStyle.success)
     async def validate(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not permissions.is_orga_or_admin(interaction):
@@ -122,7 +117,6 @@ class MatchView(discord.ui.View):
             m.map_image = picked["image"]
 
         m.status = "VALIDATED"
-
         await _refresh_match_message(interaction.client, m)
         await _refresh_all_embeds(interaction.client)
 
@@ -140,9 +134,8 @@ class MatchView(discord.ui.View):
         if m.map_image:
             await interaction.channel.send(m.map_image)
 
-        await interaction.response.send_message("Match validé.", ephemeral=True)
+        await interaction.followup.send("Match validé.", ephemeral=True)
 
-    # ---------- FORFAIT ----------
     @discord.ui.button(label="FORFAIT", emoji=config.EMOJI_FORFAIT, style=discord.ButtonStyle.secondary)
     async def forfait(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not permissions.is_orga_or_admin(interaction):
@@ -158,19 +151,15 @@ class MatchView(discord.ui.View):
             ephemeral=True
         )
 
-
 class ForfeitChoiceView(discord.ui.View):
     def __init__(self, match_id: int):
         super().__init__(timeout=60)
         self.match_id = match_id
 
-    async def _apply(self, interaction, forfeiting_team_id: int):
-        if not permissions.is_orga_or_admin(interaction):
-            return await interaction.response.send_message("Accès refusé.", ephemeral=True)
-
+    async def _apply(self, interaction: discord.Interaction, forfeiting_team_id: int):
         m = next((x for x in STATE.matches if x.id == self.match_id), None)
         if not m or m.status != "VALIDATED":
-            return await interaction.response.send_message("Action impossible.", ephemeral=True)
+            return await interaction.followup.send("Action impossible.", ephemeral=True)
 
         winner = m.team1_id if forfeiting_team_id == m.team2_id else m.team2_id
         m.winner_team_id = winner
@@ -183,72 +172,63 @@ class ForfeitChoiceView(discord.ui.View):
 
         await _refresh_match_message(interaction.client, m)
         await _refresh_all_embeds(interaction.client)
-        await interaction.response.send_message(
-            f"Forfait enregistré. Gagnant : **EQUIPE {winner}**.",
-            ephemeral=True
-        )
+        await interaction.followup.send(f"Forfait enregistré. Gagnant : **EQUIPE {winner}**.", ephemeral=True)
 
-    @discord.ui.button(label="EQUIPE 1", style=discord.ButtonStyle.danger)
-    async def team1(self, interaction, button):
+    @discord.ui.button(label="EQUIPE A", style=discord.ButtonStyle.danger)
+    async def team1(self, interaction: discord.Interaction, button: discord.ui.Button):
         m = next((x for x in STATE.matches if x.id == self.match_id), None)
         await self._apply(interaction, m.team1_id)
 
-    @discord.ui.button(label="EQUIPE 2", style=discord.ButtonStyle.danger)
-    async def team2(self, interaction, button):
+    @discord.ui.button(label="EQUIPE B", style=discord.ButtonStyle.danger)
+    async def team2(self, interaction: discord.Interaction, button: discord.ui.Button):
         m = next((x for x in STATE.matches if x.id == self.match_id), None)
         await self._apply(interaction, m.team2_id)
 
-
 class ResultView(discord.ui.View):
-    def __init__(self, match_id: int):
+    def __init__(self, match: Match):
         super().__init__(timeout=3600)
-        self.match_id = match_id
+        self.match_id = match.id
+        self.team1_id = match.team1_id
+        self.team2_id = match.team2_id
 
-    @discord.ui.button(label="EQUIPE 1", style=discord.ButtonStyle.primary)
-    async def win1(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._set_winner(interaction, 1)
+        self.clear_items()
+        self.add_item(ResultButton(f"EQUIPE {self.team1_id}", self.team1_id))
+        self.add_item(ResultButton(f"EQUIPE {self.team2_id}", self.team2_id))
 
-    @discord.ui.button(label="EQUIPE 2", style=discord.ButtonStyle.primary)
-    async def win2(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._set_winner(interaction, 2)
+class ResultButton(discord.ui.Button):
+    def __init__(self, label: str, team_id: int):
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
+        self.team_id = team_id
 
-    async def _set_winner(self, interaction: discord.Interaction, winner_index: int):
+    async def callback(self, interaction: discord.Interaction):
         if not permissions.is_orga_or_admin(interaction):
             return await interaction.response.send_message("Accès refusé.", ephemeral=True)
 
-        m = next((x for x in STATE.matches if x.id == self.match_id), None)
+        m = next((x for x in STATE.matches if x.id == interaction.message.reference.message_id), None)
         if not m or m.status != "VALIDATED":
-            return await interaction.response.send_message("Action impossible.", ephemeral=True)
+            return await interaction.followup.send("Action impossible.", ephemeral=True)
 
-        winner = m.team1_id if winner_index == 1 else m.team2_id
-        loser = m.team2_id if winner_index == 1 else m.team1_id
-
-        m.winner_team_id = winner
+        m.winner_team_id = self.team_id
         m.status = "DONE"
 
-        loser_team = _find_team(loser)
-        if loser_team:
-            loser_team.eliminated = True
-            loser_team.eliminated_round = m.round_no
+        loser = m.team2_id if self.team_id == m.team1_id else m.team1_id
+        team_loser = _find_team(loser)
+        if team_loser:
+            team_loser.eliminated = True
+            team_loser.eliminated_round = m.round_no
 
-        await _refresh_match_message(interaction.client, m)
         await _refresh_all_embeds(interaction.client)
-        await interaction.response.send_message(f"Victoire enregistrée : **EQUIPE {winner}**.", ephemeral=True)
+        await interaction.followup.send(f"Victoire enregistrée : **EQUIPE {self.team_id}**.", ephemeral=True)
 
-
-# =================================================
-# Embeds
-# =================================================
+# -------------------------------------------------
+# Embeds refresh
+# -------------------------------------------------
 async def _refresh_match_message(bot: discord.Client, m: Match):
     if not m.created_message_id:
         return
     ch = await bot.fetch_channel(m.channel_id)
     msg = await ch.fetch_message(m.created_message_id)
-    await msg.edit(
-        embed=embeds.embed_match(m, _find_team(m.team1_id), _find_team(m.team2_id)),
-        view=MatchView(m.id),
-    )
-
+    await msg.edit(embed=embeds.embed_match(m, _find_team(m.team1_id), _find_team(m.team2_id)), view=MatchView(m.id))
 
 async def _ensure_main_embeds(bot: discord.Client):
     ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
@@ -259,7 +239,6 @@ async def _ensure_main_embeds(bot: discord.Client):
     if STATE.embeds.history_msg_id is None:
         STATE.embeds.history_msg_id = (await ch.send(embed=embeds.embed_history(STATE.matches))).id
 
-
 async def _refresh_all_embeds(bot: discord.Client):
     await _ensure_main_embeds(bot)
     ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
@@ -267,10 +246,9 @@ async def _refresh_all_embeds(bot: discord.Client):
     await (await ch.fetch_message(STATE.embeds.upcoming_msg_id)).edit(embed=embeds.embed_upcoming(STATE.matches))
     await (await ch.fetch_message(STATE.embeds.history_msg_id)).edit(embed=embeds.embed_history(STATE.matches))
 
-
-# =================================================
-# Reminder
-# =================================================
+# -------------------------------------------------
+# Reminder loop
+# -------------------------------------------------
 async def _reminder_loop(bot: discord.Client):
     while True:
         try:
@@ -294,10 +272,9 @@ async def _reminder_loop(bot: discord.Client):
             pass
         await asyncio.sleep(60)
 
-
-# =================================================
+# -------------------------------------------------
 # Commands
-# =================================================
+# -------------------------------------------------
 def setup(tree: app_commands.CommandTree, bot: commands.Bot):
 
     @tree.command(name="inscription")
@@ -312,9 +289,7 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
         if STATE.embeds.players_msg_id is None:
             STATE.embeds.players_msg_id = (await ch.send(embed=embeds.embed_players(STATE.players))).id
         else:
-            await (await ch.fetch_message(STATE.embeds.players_msg_id)).edit(
-                embed=embeds.embed_players(STATE.players)
-            )
+            await (await ch.fetch_message(STATE.embeds.players_msg_id)).edit(embed=embeds.embed_players(STATE.players))
         await interaction.followup.send("Joueur inscrit.")
 
     @tree.command(name="classe")
@@ -330,9 +305,7 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
                 p.cls = classe
         ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
         if STATE.embeds.players_msg_id:
-            await (await ch.fetch_message(STATE.embeds.players_msg_id)).edit(
-                embed=embeds.embed_players(STATE.players)
-            )
+            await (await ch.fetch_message(STATE.embeds.players_msg_id)).edit(embed=embeds.embed_players(STATE.players))
         await interaction.followup.send("Classe mise à jour.")
 
     @tree.command(name="joueur_retirer")
@@ -345,9 +318,7 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
         STATE.players = [p for p in STATE.players if p.user_id != joueur.id]
         ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
         if STATE.embeds.players_msg_id:
-            await (await ch.fetch_message(STATE.embeds.players_msg_id)).edit(
-                embed=embeds.embed_players(STATE.players)
-            )
+            await (await ch.fetch_message(STATE.embeds.players_msg_id)).edit(embed=embeds.embed_players(STATE.players))
         await interaction.followup.send("Joueur retiré.")
 
     @tree.command(name="reset")
@@ -368,7 +339,7 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
         if any(p.cls is None for p in STATE.players):
             return await interaction.followup.send("Classes manquantes.")
 
-        for _ in range(200):
+        for _ in range(100):
             random.shuffle(STATE.players)
             teams = []
             ok = True
@@ -412,7 +383,6 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
 
         for i in range(0, len(alive), 2):
             t1, t2 = alive[i], alive[i + 1]
-
             overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False)}
 
             admin_role = guild.get_role(config.ADMIN_ROLE_ID)
@@ -443,10 +413,7 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
             STATE.matches.append(match)
 
             await channel.send(_channel_mentions_for_match(t1, t2))
-            msg = await channel.send(
-                embed=embeds.embed_match(match, t1, t2),
-                view=MatchView(match.id)
-            )
+            msg = await channel.send(embed=embeds.embed_match(match, t1, t2), view=MatchView(match.id))
             match.created_message_id = msg.id
             await msg.add_reaction(config.EMOJI_THUMBS)
 
@@ -476,10 +443,7 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
 
         t1 = _find_team(m.team1_id)
         t2 = _find_team(m.team2_id)
-        msg = await interaction.channel.send(
-            embed=embeds.embed_match(m, t1, t2),
-            view=MatchView(m.id)
-        )
+        msg = await interaction.channel.send(embed=embeds.embed_match(m, t1, t2), view=MatchView(m.id))
         m.created_message_id = msg.id
         await msg.add_reaction(config.EMOJI_THUMBS)
 
