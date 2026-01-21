@@ -103,7 +103,7 @@ class MatchView(discord.ui.View):
             return await interaction.response.send_message("Accès refusé.", ephemeral=True)
 
         m = self._get_match()
-        if not m or m.status != "NEED_ORGA_VALIDATE":
+        if not m or m.status == "DONE":
             return await interaction.response.send_message("Action impossible.", ephemeral=True)
 
         if not m.map_name:
@@ -112,11 +112,13 @@ class MatchView(discord.ui.View):
             m.map_image = picked["image"]
 
         m.status = "VALIDATED"
+
         await _refresh_match_message(interaction.client, m)
         await _refresh_all_embeds(interaction.client)
 
         t1 = _find_team(m.team1_id)
         t2 = _find_team(m.team2_id)
+
         await interaction.channel.send(
             f"{_channel_mentions_for_match(t1, t2)}\n\n"
             f"{config.EMOJI_VALIDATE} **MATCH VALIDÉ**\n"
@@ -167,17 +169,11 @@ class ForfeitChoiceView(discord.ui.View):
 
         await _refresh_match_message(interaction.client, m)
         await _refresh_all_embeds(interaction.client)
-        await interaction.response.send_message(f"Forfait enregistré. Gagnant : EQUIPE {winner}.", ephemeral=True)
 
-    @discord.ui.button(label="EQUIPE 1", style=discord.ButtonStyle.danger)
-    async def team1(self, interaction, button):
-        m = next((x for x in STATE.matches if x.id == self.match_id), None)
-        await self._apply(interaction, m.team1_id)
-
-    @discord.ui.button(label="EQUIPE 2", style=discord.ButtonStyle.danger)
-    async def team2(self, interaction, button):
-        m = next((x for x in STATE.matches if x.id == self.match_id), None)
-        await self._apply(interaction, m.team2_id)
+        await interaction.response.send_message(
+            f"Forfait enregistré. Gagnant : EQUIPE {winner}.",
+            ephemeral=True
+        )
 
 
 async def _refresh_match_message(bot: discord.Client, m: Match):
@@ -278,7 +274,9 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
         random.shuffle(STATE.players)
         STATE.teams.clear()
         for i in range(0, len(STATE.players), 2):
-            STATE.teams.append(Team(id=len(STATE.teams) + 1, players=(STATE.players[i], STATE.players[i + 1])))
+            STATE.teams.append(
+                Team(id=len(STATE.teams) + 1, players=(STATE.players[i], STATE.players[i + 1]))
+            )
         if STATE.embeds.players_msg_id:
             try:
                 ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
@@ -372,7 +370,10 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
         if not permissions.is_orga_or_admin(interaction):
             return await interaction.followup.send("Accès refusé.")
 
-        m = next((x for x in STATE.matches if x.channel_id == interaction.channel_id and x.status == "WAITING_AVAIL"), None)
+        m = next(
+            (x for x in STATE.matches if x.channel_id == interaction.channel_id and x.status == "WAITING_AVAIL"),
+            None
+        )
         if not m:
             return await interaction.followup.send("Aucun match modifiable.")
 
