@@ -47,59 +47,6 @@ async def on_ready():
 
 
 @bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    # Track thumbs for availability on the embed message in a match channel
-    if payload.user_id == bot.user.id:
-        return
-    if str(payload.emoji) != "👍":
-        return
-
-    from state import STATE
-    import config as cfg
-    import tournoi as tour_mod
-
-    # Find match by created_message_id
-    m = next(
-        (x for x in STATE.matches if x.created_message_id == payload.message_id and x.status != "DONE"),
-        None
-    )
-    if not m:
-        return
-
-    guild = bot.get_guild(payload.guild_id)
-    if not guild:
-        return
-
-    # Only players of the match can count
-    t1 = tour_mod._find_team(m.team1_id)
-    t2 = tour_mod._find_team(m.team2_id)
-    if not t1 or not t2:
-        return
-
-    allowed = {
-        t1.players[0].user_id,
-        t1.players[1].user_id,
-        t2.players[0].user_id,
-        t2.players[1].user_id,
-    }
-    if payload.user_id not in allowed:
-        return
-
-    m.thumbs.add(payload.user_id)
-
-    # If all 4 thumbs => ping orga and switch status
-    if len(m.thumbs) == 4 and m.status != "NEED_ORGA_VALIDATE":
-        m.status = "NEED_ORGA_VALIDATE"
-        ch = await bot.fetch_channel(m.channel_id)
-        await ch.send(
-            "Tous les joueurs sont disponibles.\n"
-            f"<@{cfg.ORGA_USER_ID}> merci de confirmer le match via ✅ VALIDER."
-        )
-        await tour_mod._refresh_match_message(bot, m)
-        await tour_mod._refresh_all_embeds(bot)
-
-
-@bot.event
 async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
@@ -110,7 +57,7 @@ async def on_message(message: discord.Message):
     import tournoi as tour_mod
     import config as cfg
 
-    # If an image is posted in a match channel => ask orga who won
+    # Détection d'un screen de résultat dans un salon de match validé
     m = next(
         (x for x in STATE.matches if x.channel_id == message.channel.id and x.status == "VALIDATED"),
         None
@@ -130,16 +77,19 @@ async def on_message(message: discord.Message):
     if not t1 or not t2:
         return
 
+    # Message de sélection du gagnant (orga/admin uniquement)
     view = tour_mod.ResultView(m.id)
     await message.channel.send(
         f"{cfg.EMOJI_TROPHY} **Résultat détecté**\n"
-        f"Match EQUIPE {m.team1_id} contre EQUIPE {m.team2_id} — qui a gagné ?\n"
-        f"(Seul l’organisateur/admin peut cliquer)",
+        f"Match **EQUIPE {m.team1_id}** vs **EQUIPE {m.team2_id}**\n\n"
+        "👉 Organisateur : sélectionne l’équipe gagnante ci-dessous.",
         view=view
     )
 
 
+# -------------------------
 # Enregistrement des commandes tournoi
+# -------------------------
 tournoi.setup(bot.tree, bot)
 
 
