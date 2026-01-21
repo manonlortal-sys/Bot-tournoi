@@ -150,7 +150,7 @@ class ForfeitChoiceView(discord.ui.View):
         super().__init__(timeout=60)
         self.match_id = match_id
 
-    async def _apply(self, interaction, forfeiting_team_id: int):
+    async def _apply(self, interaction: discord.Interaction, forfeiting_team_id: int):
         if not permissions.is_orga_or_admin(interaction):
             return await interaction.response.send_message("Accès refusé.", ephemeral=True)
 
@@ -174,6 +174,63 @@ class ForfeitChoiceView(discord.ui.View):
             f"Forfait enregistré. Gagnant : EQUIPE {winner}.",
             ephemeral=True
         )
+
+    @discord.ui.button(label="EQUIPE 1", style=discord.ButtonStyle.danger)
+    async def team1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        m = next((x for x in STATE.matches if x.id == self.match_id), None)
+        if not m:
+            return await interaction.response.send_message("Match introuvable.", ephemeral=True)
+        await self._apply(interaction, m.team1_id)
+
+    @discord.ui.button(label="EQUIPE 2", style=discord.ButtonStyle.danger)
+    async def team2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        m = next((x for x in STATE.matches if x.id == self.match_id), None)
+        if not m:
+            return await interaction.response.send_message("Match introuvable.", ephemeral=True)
+        await self._apply(interaction, m.team2_id)
+
+
+class ResultView(discord.ui.View):
+    def __init__(self, match_id: int):
+        super().__init__(timeout=3600)
+        self.match_id = match_id
+
+    @discord.ui.button(label="EQUIPE 1", style=discord.ButtonStyle.primary)
+    async def win1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not permissions.is_orga_or_admin(interaction):
+            return await interaction.response.send_message("Accès refusé.", ephemeral=True)
+        await _set_winner(interaction, self.match_id, 1)
+
+    @discord.ui.button(label="EQUIPE 2", style=discord.ButtonStyle.primary)
+    async def win2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not permissions.is_orga_or_admin(interaction):
+            return await interaction.response.send_message("Accès refusé.", ephemeral=True)
+        await _set_winner(interaction, self.match_id, 2)
+
+
+async def _set_winner(interaction: discord.Interaction, match_id: int, winner_index: int):
+    m = next((x for x in STATE.matches if x.id == match_id), None)
+    if not m or m.status != "VALIDATED":
+        return await interaction.response.send_message("Action impossible.", ephemeral=True)
+
+    winner = m.team1_id if winner_index == 1 else m.team2_id
+    loser = m.team2_id if winner_index == 1 else m.team1_id
+
+    m.winner_team_id = winner
+    m.status = "DONE"
+
+    loser_team = _find_team(loser)
+    if loser_team:
+        loser_team.eliminated = True
+        loser_team.eliminated_round = m.round_no
+
+    await _refresh_match_message(interaction.client, m)
+    await _refresh_all_embeds(interaction.client)
+
+    await interaction.response.send_message(
+        f"Victoire enregistrée : EQUIPE {winner}.",
+        ephemeral=True
+    )
 
 
 async def _refresh_match_message(bot: discord.Client, m: Match):
