@@ -58,7 +58,7 @@ def _valid_team(p1: Player, p2: Player) -> bool:
 # Views
 # =================================================
 class MatchView(discord.ui.View):
-    """Vue AVANT validation (dispo / indispo / valider)"""
+    """Avant validation : dispo / indispo / valider"""
     def __init__(self, match_id: int):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -99,7 +99,6 @@ class MatchView(discord.ui.View):
 
         m.status = "WAITING_AVAIL"
         m.thumbs.clear()
-        await _refresh_all_embeds(interaction.client)
 
     @discord.ui.button(label="VALIDER", emoji=config.EMOJI_VALIDATE, style=discord.ButtonStyle.success)
     async def validate(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -112,61 +111,55 @@ class MatchView(discord.ui.View):
         if not m or m.status == "DONE":
             return await interaction.followup.send("Action impossible.")
 
-        # Tirage map
         picked = random.choice(config.MAPS)
         m.map_name = picked["name"]
         m.map_image = picked["image"]
         m.status = "VALIDATED"
 
-        # Supprimer message initial
         try:
-            msg = await interaction.channel.fetch_message(m.created_message_id)
-            await msg.delete()
+            old = await interaction.channel.fetch_message(m.created_message_id)
+            await old.delete()
         except:
             pass
 
         t1 = _find_team(m.team1_id)
         t2 = _find_team(m.team2_id)
 
-        # Message VALIDÉ avec embed propre
         embed = embeds.embed_match(m, t1, t2)
         view = ValidatedMatchView(m.id)
 
-        new_msg = await interaction.channel.send(
+        msg = await interaction.channel.send(
             content=_channel_mentions_for_match(t1, t2),
             embed=embed,
             view=view
         )
-        m.created_message_id = new_msg.id
+        m.created_message_id = msg.id
 
-        await _refresh_all_embeds(interaction.client)
+        if m.map_image:
+            await interaction.channel.send(m.map_image)
+
         await interaction.followup.send("Match validé.")
 
 class ValidatedMatchView(discord.ui.View):
-    """Vue APRÈS validation (forfait / résultat)"""
+    """Après validation : forfait"""
     def __init__(self, match_id: int):
         super().__init__(timeout=None)
         self.match_id = match_id
 
-    def _get_match(self) -> Match | None:
-        return next((m for m in STATE.matches if m.id == self.match_id), None)
-
     @discord.ui.button(label="FORFAIT", emoji=config.EMOJI_FORFAIT, style=discord.ButtonStyle.secondary)
     async def forfait(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
+
         if not permissions.is_orga_or_admin(interaction):
             return await interaction.followup.send("Accès refusé.")
 
-        m = self._get_match()
+        m = next((x for x in STATE.matches if x.id == self.match_id), None)
         if not m or m.status != "VALIDATED":
             return await interaction.followup.send("Action impossible.")
 
-        t1 = _find_team(m.team1_id)
-        t2 = _find_team(m.team2_id)
-
         await interaction.followup.send(
             "Quelle équipe déclare forfait ?",
-            view=ForfeitChoiceView(m.id, t1.id, t2.id),
+            view=ForfeitChoiceView(m.id, m.team1_id, m.team2_id),
             ephemeral=True
         )
 
@@ -196,24 +189,24 @@ class ForfeitChoiceView(discord.ui.View):
             loser.eliminated = True
             loser.eliminated_round = m.round_no
 
-        await _refresh_all_embeds(interaction.client)
-        await interaction.followup.send(f"Forfait enregistré. Gagnant : **EQUIPE {winner}**.")
+        await interaction.followup.send(f"Forfait enregistré. **EQUIPE {winner} gagne**.")
 
-    @discord.ui.button(label="EQUIPE 1", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="EQUIPE A", style=discord.ButtonStyle.danger)
     async def team1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        button.label = f"EQUIPE {self.team1_id}"
         await self._apply(interaction, self.team1_id)
 
-    @discord.ui.button(label="EQUIPE 2", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="EQUIPE B", style=discord.ButtonStyle.danger)
     async def team2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        button.label = f"EQUIPE {self.team2_id}"
         await self._apply(interaction, self.team2_id)
 
 class ResultView(discord.ui.View):
-    """Choix du gagnant après screen"""
     def __init__(self, match_id: int):
         super().__init__(timeout=3600)
         self.match_id = match_id
 
-    async def _set_winner(self, interaction: discord.Interaction, winner_index: int):
+    async def _set_winner(self, interaction: discord.Interaction, team_id: int):
         await interaction.response.defer(ephemeral=True)
 
         if not permissions.is_orga_or_admin(interaction):
@@ -223,58 +216,27 @@ class ResultView(discord.ui.View):
         if not m or m.status != "VALIDATED":
             return await interaction.followup.send("Action impossible.")
 
-        winner = m.team1_id if winner_index == 1 else m.team2_id
-        loser = m.team2_id if winner_index == 1 else m.team1_id
+        loser_id = m.team1_id if team_id == m.team2_id else m.team2_id
 
-        m.winner_team_id = winner
+        m.winner_team_id = team_id
         m.status = "DONE"
 
-        loser_team = _find_team(loser)
-        if loser_team:
-            loser_team.eliminated = True
-            loser_team.eliminated_round = m.round_no
+        loser = _find_team(loser_id)
+        if loser:
+            loser.eliminated = True
+            loser.eliminated_round = m.round_no
 
-        await _refresh_all_embeds(interaction.client)
-        await interaction.followup.send(f"Victoire enregistrée : **EQUIPE {winner}**.")
+        await interaction.followup.send(f"Victoire enregistrée : **EQUIPE {team_id}**.")
 
-    @discord.ui.button(label="EQUIPE 1", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="EQUIPE A", style=discord.ButtonStyle.primary)
     async def win1(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._set_winner(interaction, 1)
+        m = next((x for x in STATE.matches if x.id == self.match_id), None)
+        await self._set_winner(interaction, m.team1_id)
 
-    @discord.ui.button(label="EQUIPE 2", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="EQUIPE B", style=discord.ButtonStyle.primary)
     async def win2(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._set_winner(interaction, 2)
-
-# =================================================
-# Embeds refresh
-# =================================================
-async def _refresh_match_message(bot: discord.Client, m: Match):
-    if not m.created_message_id:
-        return
-    ch = await bot.fetch_channel(m.channel_id)
-    try:
-        msg = await ch.fetch_message(m.created_message_id)
-        await msg.edit(
-            embed=embeds.embed_match(m, _find_team(m.team1_id), _find_team(m.team2_id)),
-        )
-    except:
-        pass
-
-async def _ensure_main_embeds(bot: discord.Client):
-    ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
-    if STATE.embeds.teams_msg_id is None:
-        STATE.embeds.teams_msg_id = (await ch.send(embed=embeds.embed_teams(STATE.teams))).id
-    if STATE.embeds.upcoming_msg_id is None:
-        STATE.embeds.upcoming_msg_id = (await ch.send(embed=embeds.embed_upcoming(STATE.matches))).id
-    if STATE.embeds.history_msg_id is None:
-        STATE.embeds.history_msg_id = (await ch.send(embed=embeds.embed_history(STATE.matches))).id
-
-async def _refresh_all_embeds(bot: discord.Client):
-    await _ensure_main_embeds(bot)
-    ch = await bot.fetch_channel(config.CHANNEL_EMBEDS_ID)
-    await (await ch.fetch_message(STATE.embeds.teams_msg_id)).edit(embed=embeds.embed_teams(STATE.teams))
-    await (await ch.fetch_message(STATE.embeds.upcoming_msg_id)).edit(embed=embeds.embed_upcoming(STATE.matches))
-    await (await ch.fetch_message(STATE.embeds.history_msg_id)).edit(embed=embeds.embed_history(STATE.matches))
+        m = next((x for x in STATE.matches if x.id == self.match_id), None)
+        await self._set_winner(interaction, m.team2_id)
 
 # =================================================
 # Reminder loop
