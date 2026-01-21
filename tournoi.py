@@ -21,7 +21,10 @@ ORGA_IDS = {
 
 
 def _find_team(team_id: int) -> Team | None:
-    return next((t for t in STATE.teams if t.id == team_id), None)
+    for t in STATE.teams:
+        if t.id == team_id:
+            return t
+    return None
 
 
 def _alive_teams() -> list[Team]:
@@ -67,8 +70,10 @@ class MatchView(discord.ui.View):
         if not t1 or not t2:
             return False
         return user_id in {
-            t1.players[0].user_id, t1.players[1].user_id,
-            t2.players[0].user_id, t2.players[1].user_id,
+            t1.players[0].user_id,
+            t1.players[1].user_id,
+            t2.players[0].user_id,
+            t2.players[1].user_id,
         }
 
     @discord.ui.button(label="INDISPONIBLE", emoji=config.EMOJI_CROSS, style=discord.ButtonStyle.danger)
@@ -290,49 +295,74 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
         await interaction.response.defer(ephemeral=True)
         if not permissions.is_orga_or_admin(interaction):
             return await interaction.followup.send("Accès refusé.")
+
         alive = _alive_teams()
         if not alive or len(alive) % 2 != 0:
             return await interaction.followup.send("Nombre d'équipes invalide.")
+
         prev_pending = [m for m in STATE.matches if m.round_no == STATE.current_round and m.status != "DONE"]
         if prev_pending:
             return await interaction.followup.send("Le round précédent n’est pas terminé.")
+
         STATE.current_round += 1
         guild = interaction.guild
         category = guild.get_channel(config.MATCH_CATEGORY_ID)
         random.shuffle(alive)
+
         for i in range(0, len(alive), 2):
             t1, t2 = alive[i], alive[i + 1]
-            overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False)}
+
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False)
+            }
+
             admin_role = guild.get_role(config.ADMIN_ROLE_ID)
             if admin_role:
-                overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+                overwrites[admin_role] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True
+                )
+
             for oid in ORGA_IDS:
-                mem = guild.get_member(oid)
-                if mem:
-                    overwrites[mem] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-            for pl in (*t1.players, *t2.players):
-                mem = guild.get_member(pl.user_id)
-                if mem:
-                    overwrites[mem] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-            ch = await guild.create_text_channel(
+                overwrites[discord.Object(id=oid)] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True
+                )
+
+            for p in (*t1.players, *t2.players):
+                overwrites[discord.Object(id=p.user_id)] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True
+                )
+
+            channel = await guild.create_text_channel(
                 name=config.MATCH_CHANNEL_TEMPLATE.format(a=t1.id, b=t2.id),
                 category=category,
                 overwrites=overwrites,
             )
-            m = Match(
+
+            match = Match(
                 id=len(STATE.matches) + 1,
                 round_no=STATE.current_round,
                 team1_id=t1.id,
                 team2_id=t2.id,
                 date_str=date,
                 time_str=heure,
-                channel_id=ch.id,
+                channel_id=channel.id,
             )
-            STATE.matches.append(m)
-            await ch.send(_channel_mentions_for_match(t1, t2))
-            msg = await ch.send(embed=embeds.embed_match(m, t1, t2), view=MatchView(m.id))
-            m.created_message_id = msg.id
+            STATE.matches.append(match)
+
+            await channel.send(_channel_mentions_for_match(t1, t2))
+            msg = await channel.send(
+                embed=embeds.embed_match(match, t1, t2),
+                view=MatchView(match.id)
+            )
+            match.created_message_id = msg.id
             await msg.add_reaction(config.EMOJI_THUMBS)
+
         await _refresh_all_embeds(bot)
         await interaction.followup.send("Round créé.")
 
@@ -341,22 +371,29 @@ def setup(tree: app_commands.CommandTree, bot: commands.Bot):
         await interaction.response.defer(ephemeral=True)
         if not permissions.is_orga_or_admin(interaction):
             return await interaction.followup.send("Accès refusé.")
+
         m = next((x for x in STATE.matches if x.channel_id == interaction.channel_id and x.status == "WAITING_AVAIL"), None)
         if not m:
             return await interaction.followup.send("Aucun match modifiable.")
+
         m.date_str = date
         m.time_str = heure
         m.thumbs.clear()
-        ch = interaction.channel
+
         try:
-            old = await ch.fetch_message(m.created_message_id)
+            old = await interaction.channel.fetch_message(m.created_message_id)
             await old.delete()
         except:
             pass
+
         t1 = _find_team(m.team1_id)
         t2 = _find_team(m.team2_id)
-        msg = await ch.send(embed=embeds.embed_match(m, t1, t2), view=MatchView(m.id))
+        msg = await interaction.channel.send(
+            embed=embeds.embed_match(m, t1, t2),
+            view=MatchView(m.id)
+        )
         m.created_message_id = msg.id
         await msg.add_reaction(config.EMOJI_THUMBS)
+
         await _refresh_all_embeds(bot)
         await interaction.followup.send("Horaire modifié.")
