@@ -40,28 +40,31 @@ async def pari(interaction: discord.Interaction, joueur: discord.Member, mise: f
         await interaction.response.send_message("❌ Tu n’es pas autorisé.", ephemeral=True)
         return
 
-    # Calcul
+    # Calculs
     cote_kamazone = round(cote_winamax * 0.8, 2)
     gain = round(mise * cote_kamazone, 2)
 
-    # Créer tableau vertical
-    tableau = f"""```
-| Catégorie      | Valeur           |
-|----------------|-----------------|
-| Joueur         | {joueur.display_name:<15} |
-| Mise (K)       | {mise:<15} |
-| Côte Winamax   | {cote_winamax:<15} |
-| Côte Kamazone  | {cote_kamazone:<15} |
-| Gain Potentiel | {gain:<15} |
-```"""
+    # Créer l'embed avec tableau aligné
+    embed = discord.Embed(title="🎰 Pari Sportif", color=0xFFD700)
+    embed.add_field(
+        name="\u200b",
+        value=f"""```
+| 🎮 Joueur        │ {joueur.display_name:<15}
+| 💰 Mise (K)      │ {mise:<15}
+| 🎲 Côte Winamax  │ {cote_winamax:<15}
+| ⚡ Côte Kamazone │ {cote_kamazone:<15}
+| 🏆 Gain Potentiel│ {gain:<15}
+```""",
+        inline=False
+    )
 
     # 1️⃣ Envoi dans le salon où la commande a été faite
-    await interaction.response.send_message(content=tableau)
+    await interaction.response.send_message(embed=embed)
 
-    # 2️⃣ Envoi dans le salon spécifique
+    # 2️⃣ Envoi dans le salon spécifique (doublon)
     channel = bot.get_channel(PARIS_CHANNEL_ID)
     if channel is not None:
-        await channel.send(content=tableau)
+        await channel.send(embed=embed)
         await channel.send(content=f"Bonne chance {joueur.mention} ! 🍀")
 
 # ======= Démarrage =======
