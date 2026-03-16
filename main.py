@@ -52,7 +52,7 @@ class PariModal(ui.Modal, title="Créer un pari"):
         embed = discord.Embed(title="🎰 PARI SPORTIF", color=0xFFD700)
         embed.add_field(name="💰 Mise", value=f"{mise} K", inline=False)
         embed.add_field(name="📊 Côte Winamax", value=f"{cote_win}", inline=True)
-        embed.add_field(name="📉 Côte Kamazone", value=f"{cote_kamazone}", inline=True)
+        embed.add_field(name="📉 Côte Kamazon", value=f"{cote_kamazone}", inline=True)
         embed.add_field(name="🏆 Gain potentiel", value=f"{gain} K", inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=False)
