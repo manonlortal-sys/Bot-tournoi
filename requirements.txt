@@ -1,1 +1,3 @@
-pip install discord.py flask python-dotenv
+discord.py
+flask
+python-dotenv
