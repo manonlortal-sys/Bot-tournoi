@@ -85,7 +85,7 @@ async def pari(interaction: discord.Interaction, joueur: discord.Member, mise: s
 🎮 Joueur        │ {joueur.display_name:<15}
 💰 Mise (K)      │ {mise_formatee:<15}
 🎲 Côte Winamax  │ {cote_winamax:<15}
-⚡ Côte Kamazone │ {cote_kamazone:<15}
+⚡ Côte Kamazon  │ {cote_kamazone:<15}
 🏆 Gain Potentiel│ {gain_formate:<15}
 ```""",
         inline=False
