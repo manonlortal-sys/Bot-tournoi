@@ -44,16 +44,20 @@ async def pari(interaction: discord.Interaction, joueur: discord.Member, mise: f
     cote_kamazone = round(cote_winamax * 0.8, 2)
     gain = round(mise * cote_kamazone, 2)
 
+    # Formatage avec espaces pour les milliers
+    mise_formatee = f"{mise:,.2f}".replace(",", " ")
+    gain_formate = f"{gain:,.2f}".replace(",", " ")
+
     # Créer l'embed avec tableau aligné
     embed = discord.Embed(title="🎰 Pari Sportif", color=0xFFD700)
     embed.add_field(
         name="\u200b",
         value=f"""```
 | 🎮 Joueur        │ {joueur.display_name:<15}
-| 💰 Mise (K)      │ {mise:<15}
+| 💰 Mise (K)      │ {mise_formatee:<15}
 | 🎲 Côte Winamax  │ {cote_winamax:<15}
 | ⚡ Côte Kamazone │ {cote_kamazone:<15}
-| 🏆 Gain Potentiel│ {gain:<15}
+| 🏆 Gain Potentiel│ {gain_formate:<15}
 ```""",
         inline=False
     )
