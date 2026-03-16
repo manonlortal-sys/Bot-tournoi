@@ -8,8 +8,8 @@ from threading import Thread
 
 # ======= Configuration =======
 TOKEN = os.getenv("DISCORD_TOKEN")       # Token depuis l'environnement
-ADMIN_ID = 1480944167348605031           # ID de l'admin
-PARIS_CHANNEL_ID = 1480960334729842788   # Salon spécifique pour doublon
+ADMIN_ROLE_NAME = "ADMIN"                # Nom du rôle autorisé
+PARIS_CHANNEL_ID = 1480960334729842788  # Salon spécifique pour doublon
 
 # ======= Intents & Bot =======
 intents = discord.Intents.default()
@@ -34,8 +34,8 @@ class PariModal(ui.Modal, title="Créer un pari"):
     cote_winamax = ui.TextInput(label="Côte Winamax", placeholder="3.2", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Vérification ID admin
-        if interaction.user.id != ADMIN_ID:
+        # Vérification rôle ADMIN
+        if ADMIN_ROLE_NAME not in [role.name for role in interaction.user.roles]:
             await interaction.response.send_message("❌ Tu n’es pas autorisé.", ephemeral=True)
             return
 
@@ -52,7 +52,7 @@ class PariModal(ui.Modal, title="Créer un pari"):
 
         # Récupérer l'utilisateur mentionné
         try:
-            user_id = int(self.joueur.value.strip("<@!>"))  # transforme la mention en ID
+            user_id = int(self.joueur.value.strip("<@!>"))
             joueur_member = await bot.fetch_user(user_id)
         except:
             await interaction.response.send_message("❌ Mention invalide.", ephemeral=True)
@@ -82,8 +82,8 @@ class PariModal(ui.Modal, title="Créer un pari"):
 # ======= Commande Slash =======
 @bot.tree.command(name="pari", description="Créer un pari sportif")
 async def pari(interaction: discord.Interaction):
-    # Vérification ID admin
-    if interaction.user.id != ADMIN_ID:
+    # Vérification rôle ADMIN
+    if ADMIN_ROLE_NAME not in [role.name for role in interaction.user.roles]:
         await interaction.response.send_message("❌ Tu n’es pas autorisé.", ephemeral=True)
         return
 
