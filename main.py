@@ -8,7 +8,7 @@ from threading import Thread
 
 # ======= Configuration =======
 TOKEN = os.getenv("DISCORD_TOKEN")       # Token depuis l'environnement
-ADMIN_ROLE_ID = 987654321098765432       # ID du rôle Admin Discord
+ADMIN_ROLE_ID = 1480944167348605031       # ID du rôle Admin Discord
 
 # ======= Intents & Bot =======
 intents = discord.Intents.default()
