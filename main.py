@@ -27,37 +27,66 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
+# ======= Fonctions utilitaires =======
+def format_kamas(amount):
+    """Formate les montants en K/M/B pour lisibilité"""
+    if amount >= 1_000_000_000:
+        return f"{round(amount / 1_000_000_000, 2)}B"
+    elif amount >= 1_000_000:
+        return f"{round(amount / 1_000_000, 2)}M"
+    elif amount >= 1_000:
+        return f"{round(amount / 1_000, 2)}K"
+    else:
+        return str(round(amount, 2))
+
+def parse_mise(mise_str):
+    """Convertit la saisie de l'admin en float (12m, 12 000 000, etc.)"""
+    s = mise_str.replace(" ", "").lower()
+    if s.endswith("m"):
+        return float(s[:-1]) * 1_000_000
+    elif s.endswith("k"):
+        return float(s[:-1]) * 1_000
+    else:
+        return float(s)
+
 # ======= Commande Slash /pari =======
 @bot.tree.command(name="pari", description="Créer un pari sportif")
 @app_commands.describe(
     joueur="Le joueur à qui s'applique le pari (mention)",
-    mise="Montant misé (K)",
+    mise="Montant misé (K ou M)",
     cote_winamax="Côte Winamax"
 )
-async def pari(interaction: discord.Interaction, joueur: discord.Member, mise: float, cote_winamax: float):
+async def pari(interaction: discord.Interaction, joueur: discord.Member, mise: str, cote_winamax: float):
     # Vérification rôle ADMIN
     if ADMIN_ROLE_NAME not in [role.name for role in interaction.user.roles]:
         await interaction.response.send_message("❌ Tu n’es pas autorisé.", ephemeral=True)
         return
 
+    # Conversion de la mise
+    try:
+        mise_val = parse_mise(mise)
+    except ValueError:
+        await interaction.response.send_message("❌ Montant invalide.", ephemeral=True)
+        return
+
     # Calculs
     cote_kamazone = round(cote_winamax * 0.8, 2)
-    gain = round(mise * cote_kamazone, 2)
+    gain = round(mise_val * cote_kamazone, 2)
 
-    # Formatage avec espaces pour les milliers
-    mise_formatee = f"{mise:,.2f}".replace(",", " ")
-    gain_formate = f"{gain:,.2f}".replace(",", " ")
+    # Formatage K/M/B pour l'affichage
+    mise_formatee = format_kamas(mise_val)
+    gain_formate = format_kamas(gain)
 
-    # Créer l'embed avec tableau aligné
+    # Création de l'embed avec tableau aligné
     embed = discord.Embed(title="🎰 Pari Sportif", color=0xFFD700)
     embed.add_field(
         name="\u200b",
         value=f"""```
-| 🎮 Joueur        │ {joueur.display_name:<15}
-| 💰 Mise (K)      │ {mise_formatee:<15}
-| 🎲 Côte Winamax  │ {cote_winamax:<15}
-| ⚡ Côte Kamazone │ {cote_kamazone:<15}
-| 🏆 Gain Potentiel│ {gain_formate:<15}
+🎮 Joueur        │ {joueur.display_name:<15}
+💰 Mise (K)      │ {mise_formatee:<15}
+🎲 Côte Winamax  │ {cote_winamax:<15}
+⚡ Côte Kamazone │ {cote_kamazone:<15}
+🏆 Gain Potentiel│ {gain_formate:<15}
 ```""",
         inline=False
     )
