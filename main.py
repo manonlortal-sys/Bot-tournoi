@@ -8,8 +8,8 @@ from threading import Thread
 
 # ======= Configuration =======
 TOKEN = os.getenv("DISCORD_TOKEN")       # Token depuis l'environnement
-ADMIN_ROLE_ID =  1480944167348605031     # ID du rôle Admin Discord
-PARIS_CHANNEL_ID = 1480960334729842788   # Salon spécifique pour duplication
+ADMIN_ID = 1480944167348605031           # ID de l'admin
+PARIS_CHANNEL_ID = 1480960334729842788   # Salon spécifique pour doublon
 
 # ======= Intents & Bot =======
 intents = discord.Intents.default()
@@ -34,8 +34,8 @@ class PariModal(ui.Modal, title="Créer un pari"):
     cote_winamax = ui.TextInput(label="Côte Winamax", placeholder="3.2", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Vérification rôle Admin
-        if not any(role.id == ADMIN_ROLE_ID for role in interaction.user.roles):
+        # Vérification ID admin
+        if interaction.user.id != ADMIN_ID:
             await interaction.response.send_message("❌ Tu n’es pas autorisé.", ephemeral=True)
             return
 
@@ -58,11 +58,15 @@ class PariModal(ui.Modal, title="Créer un pari"):
             await interaction.response.send_message("❌ Mention invalide.", ephemeral=True)
             return
 
-        # Créer le “tableau” dans un bloc code
+        # Créer le tableau vertical en bloc code
         tableau = f"""```
-| Joueur      | Mise (K) | Côte Winamax | Côte Kamazone | Gain Potentiel |
-|------------|-----------|--------------|---------------|----------------|
-| {joueur_member.display_name:<11} | {mise:<9} | {cote_win:<12} | {cote_kamazone:<13} | {gain:<14} |
+| Catégorie      | Valeur           |
+|----------------|-----------------|
+| Joueur         | {joueur_member.display_name:<15} |
+| Mise (K)       | {mise:<15} |
+| Côte Winamax   | {cote_win:<15} |
+| Côte Kamazone  | {cote_kamazone:<15} |
+| Gain Potentiel | {gain:<15} |
 ```"""
 
         # 1️⃣ Envoi dans le salon où la commande a été faite
@@ -78,7 +82,8 @@ class PariModal(ui.Modal, title="Créer un pari"):
 # ======= Commande Slash =======
 @bot.tree.command(name="pari", description="Créer un pari sportif")
 async def pari(interaction: discord.Interaction):
-    if not any(role.id == ADMIN_ROLE_ID for role in interaction.user.roles):
+    # Vérification ID admin
+    if interaction.user.id != ADMIN_ID:
         await interaction.response.send_message("❌ Tu n’es pas autorisé.", ephemeral=True)
         return
 
@@ -90,7 +95,7 @@ async def pari(interaction: discord.Interaction):
 async def on_ready():
     print(f"{bot.user} est en ligne !")
     try:
-        synced = await bot.tree.sync()
+        synced = await bot.tree.sync()  # commandes globales
         print(f"Commandes slash synchronisées : {len(synced)}")
     except Exception as e:
         print(f"Erreur sync commandes : {e}")
